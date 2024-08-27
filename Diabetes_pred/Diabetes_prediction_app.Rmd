@@ -1,0 +1,126 @@
+---
+title: "Diabetes Prediction App"
+author: "Sunny"
+date: "2024-08-27"
+output: ioslides_presentation
+---
+<style>
+.reveal pre code, pre, code {
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+slides > slide {
+  font-size: 18px !important;
+}
+
+slides > slide .content {
+  font-size: 18px !important;
+}
+
+ul, ol {
+  font-size: 16px !important;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
+library(dplyr)
+library(caret)
+library(knitr)
+```
+
+## Introduction
+
+- Shiny app for predicting diabetes risk
+- Based on health indicators from [BRFSS 2015 (Kaggle)](https://www.kaggle.com/datasets/alexteboul/diabetes-health-indicators-dataset/data?select=diabetes_012_health_indicators_BRFSS2015.csv)
+- Development process:
+  - Start with 21 health indicators
+  - Used 20% stratified sample due to memory constraints
+  - Applied XGBoost model for feature selection
+  - Selected top 5 most impactful featuresUses XGBoost model 
+- Provides risk category and confidence score
+
+
+## Data
+
+```{r}
+# Load the data
+data <- read.csv("diabetes_012_health_indicators_BRFSS2015.csv")
+data <- data %>%
+  select(c("HighBP", "BMI", "DiffWalk", "HighChol", "GenHlth", "Diabetes_012")) %>%
+  mutate(across(!c(BMI), factor))
+levels(data$Diabetes_012) <- c("Normal", "Prediabetes", "Diabetes")
+```
+(omit some codes)
+```{r, echo=FALSE}
+# Data Partition
+set.seed(8-26-2024)
+train_index <- createDataPartition(data$Diabetes_012, p = 0.2, list = FALSE)
+
+sampled_data <- data[train_index, ]
+
+# Create summary statistics
+summary_data <- sampled_data %>%
+  group_by(Diabetes_012) %>%
+  summarise(
+    Count = n(),
+    HighBP_Yes = sum(HighBP == 1),
+    HighChol_Yes = sum(HighChol == 1),
+    Avg_BMI = mean(as.numeric(as.character(BMI)), na.rm = TRUE),
+    Avg_GenHlth = mean(as.numeric(as.character(GenHlth)), na.rm = TRUE)
+  )
+```
+```{r}
+# Display the summary table
+kable(summary_data, digits = 2,
+      col.names = c("Diabetes Status", "Count", "High BP", "High Cholesterol", "Avg BMI", "Avg Gen. Health"),
+      caption = "Summary of Key Health Indicators by Diabetes Status (20% Sample)")
+```
+
+## Model and App Features
+
+- User inputs:
+  - BMI
+  - High Blood Pressure
+  - High Cholesterol
+  - Difficulty Walking
+  - General Health
+
+- Output:
+  - Risk category(Normal, Prediabetes, Diabetes)
+  - Confidence score
+
+```{r, eval=FALSE}
+# XGBoost Modelling
+set.seed(8-26-2024)
+final_xgb_model <- train(Diabetes_012 ~ .,data = sampled_data,method = "xgbTree")
+saveRDS(final_xgb_model, "final_diabetes_xgb_model.rds")
+```
+
+```{r}
+# Load the model
+model <- readRDS("final_diabetes_xgb_model.rds")
+
+# Display feature importance
+print(model$results[which.max(model$results$Accuracy), ])
+```
+
+
+## Model Performance
+
+```{r}
+## Create test set by randomly sampling 100 instances from the remaining data
+remaining_data <- data[-train_index, ]
+test_index <- sample(1:nrow(remaining_data), 100)
+test_data <- remaining_data[test_index, ]
+
+# Make predictions
+predictions <- predict(model, newdata = test_data)
+
+# Calculate performance metrics
+confusion_matrix <- confusionMatrix(predictions, test_data$Diabetes_012)
+cat("Test Accuracy:", confusion_matrix$overall['Accuracy'], "\n")
+```
+
+Remember: This app is for educational purposes only. Always consult healthcare professionals for medical advice.
